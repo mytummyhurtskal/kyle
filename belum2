@@ -561,8 +561,34 @@ UtilitiesTab:Button({
 })
 
 -------------------------------------------
------ =======[ FISH NOTIF TAB ]
+----- =======[ FISH NOTIFICATION & DATA ]
 -------------------------------------------
+local FishDataById, VariantsByName = {}, {}
+local rarityMap = {
+    [1] = "Common", [2] = "Uncommon", [3] = "Rare", [4] = "Epic",
+    [5] = "Legendary", [6] = "Mythic", [7] = "Secret"
+}
+local reverseRarityMap = {}
+for tier, name in pairs(rarityMap) do
+    reverseRarityMap[name] = tier
+end
+
+
+pcall(function()
+    for _, item in ipairs(ReplicatedStorage.Items:GetChildren()) do
+        local ok, data = pcall(require, item)
+        if ok and data.Data and data.Data.Type == "Fishes" then
+            FishDataById[data.Data.Id] = { Name = data.Data.Name, SellPrice = data.SellPrice or 0, Tier = data.Data.Tier, Icon = data.IconId or data.Data.Icon or "" }
+        end
+    end
+    for _, v in ipairs(ReplicatedStorage.Variants:GetChildren()) do
+        local ok, data = pcall(require, v)
+        if ok and data.Data and data.Data.Type == "Variant" then
+            VariantsByName[data.Data.Name] = data.SellMultiplier or 1
+        end
+    end
+end)
+
 local categoriesDropdown
 FishNotif:Paragraph({
     Title = "Fish Notification",
@@ -605,27 +631,6 @@ FishNotif:Input({
     end
 })
 
-local FishDataById, VariantsByName = {}, {}
-local rarityMap = {
-    [1] = "Common", [2] = "Uncommon", [3] = "Rare", [4] = "Epic",
-    [5] = "Legendary", [6] = "Mythic", [7] = "Secret"
-}
-
-pcall(function()
-    for _, item in ipairs(ReplicatedStorage.Items:GetChildren()) do
-        local ok, data = pcall(require, item)
-        if ok and data.Data and data.Data.Type == "Fishes" then
-            FishDataById[data.Data.Id] = { Name = data.Data.Name, SellPrice = data.SellPrice or 0, Tier = data.Data.Tier, Icon = data.IconId or data.Data.Icon or "" }
-        end
-    end
-    for _, v in ipairs(ReplicatedStorage.Variants:GetChildren()) do
-        local ok, data = pcall(require, v)
-        if ok and data.Data and data.Data.Type == "Variant" then
-            VariantsByName[data.Data.Name] = data.SellMultiplier or 1
-        end
-    end
-end)
-
 categoriesDropdown = FishNotif:Dropdown({
     Title = "Select Fish Categories",
     Desc = "Choose which categories to send to webhook",
@@ -638,11 +643,13 @@ categoriesDropdown = FishNotif:Dropdown({
     end
 })
 
+
 -------------------------------------------
 ----- =======[ AUTO TRADE TAB ]
 -------------------------------------------
 local targetUserId = nil
 local tradeActive = false
+local selectedTradeCategory = "Common"
 
 TradeTab:Input({
    Title = "Target Player",
@@ -677,6 +684,76 @@ TradeTab:Toggle({
       end
    end,
 })
+
+TradeTab:Divider()
+
+TradeTab:Dropdown({
+    Title = "Select Category to Trade",
+    Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret"},
+    Default = "Common",
+    Callback = function(selected)
+        selectedTradeCategory = selected
+    end
+})
+
+TradeTab:Button({
+    Title = "Trade All by Category",
+    Desc = "Trades all UNFASHIONED fish of the selected category to the target player. A small delay is added between each trade.",
+    Callback = function()
+        if not targetUserId then
+            NotifyError("Trade Failed", "You must set a target player first.")
+            return
+        end
+        if not Replion or not ItemUtility then
+            NotifyError("Trade Failed", "Required modules (Replion, ItemUtility) are not available.")
+            return
+        end
+
+        local targetTier = reverseRarityMap[selectedTradeCategory]
+        if not targetTier then
+            NotifyError("Trade Failed", "Invalid category selected.")
+            return
+        end
+
+        NotifyInfo("Starting Trade", "Finding all unfavorited '" .. selectedTradeCategory .. "' fish to trade...")
+
+        task.spawn(function()
+            local itemsToTrade = {}
+            local DataReplion = Replion.Client:WaitReplion("Data")
+            local inventory = DataReplion and DataReplion:Get({"Inventory","Items"})
+            if type(inventory) ~= "table" then return end
+
+            for _, item in ipairs(inventory) do
+                local base = ItemUtility:GetItemData(item.Id)
+                if base and base.Data and base.Data.Tier == targetTier and not item.Favorited then
+                    table.insert(itemsToTrade, item.UUID)
+                end
+            end
+
+            if #itemsToTrade == 0 then
+                NotifyWarning("No Fish Found", "No unfavorited '" .. selectedTradeCategory .. "' fish were found in your inventory.")
+                return
+            end
+
+            NotifySuccess("Fish Found", "Found " .. #itemsToTrade .. " fish. Sending trade requests now...")
+            
+            local netFolder = getNetFolder()
+            local initiateTrade = netFolder and netFolder:FindFirstChild("RF/InitiateTrade")
+            if not initiateTrade then
+                NotifyError("Trade Failed", "Could not find the InitiateTrade remote function.")
+                return
+            end
+
+            for i, uuid in ipairs(itemsToTrade) do
+                initiateTrade:InvokeServer(targetUserId, uuid)
+                task.wait(0.75) -- Delay to prevent spamming the server
+            end
+
+            NotifyInfo("Trade Complete", "Finished sending all trade requests.")
+        end)
+    end
+})
+
 
 -------------------------------------------
 ----- =======[ METAMETHOD & EVENT HOOKS ]
@@ -760,7 +837,7 @@ if REObtainedNewFishNotification then
     end)
 end
 
--- NEW TRADE HOOKS
+-- TRADE HOOKS
 pcall(function()
     local netFolder = getNetFolder()
     if not netFolder then return end
