@@ -58,8 +58,8 @@ local lastFarmPosition = nil
 local lastCatchTimestamp = 0
 local respawnTimerLoop = nil
 
--- Include Epic, Legendary, Mythic, Secret fish
-local allowedTiers = { [4]=true, [5]=true, [6]=true, [7]=true }
+-- Include Legendary, Mythic, Secret fish
+local allowedTiers = { [5]=true, [6]=true, [7]=true }
 
 -- Weather Feature State
 local weatherActive = {}
@@ -346,7 +346,7 @@ local Window = WindUI:CreateWindow({
     Folder = "e-Fishery",
     Size = UDim2.fromOffset(600, 400),
     Transparent = true,
-    Theme = "Light",
+    Theme = "Dark",
     KeySystem = false,
     ScrollBarEnabled = true,
     HideSearchBar = true,
@@ -698,7 +698,7 @@ TradeTab:Dropdown({
 
 TradeTab:Button({
     Title = "Trade All by Category",
-    Desc = "Trades all UNFASHIONED fish of the selected category to the target player. A small delay is added between each trade.",
+    Desc = "Trades all UNFAVORITED fish of the selected category to the target player. A small delay is added between each trade.",
     Callback = function()
         if not targetUserId then
             NotifyError("Trade Failed", "You must set a target player first.")
